@@ -1,9 +1,13 @@
 package com.wtiii.collage;
 
 import androidx.appcompat.app.AppCompatActivity;
+import androidx.core.app.ActivityCompat;
+import androidx.core.content.ContextCompat;
 import androidx.core.content.FileProvider;
 
+import android.Manifest;
 import android.content.Intent;
+import android.content.pm.PackageManager;
 import android.net.Uri;
 import android.os.Bundle;
 import android.os.Environment;
@@ -11,20 +15,28 @@ import android.provider.MediaStore;
 import android.util.Log;
 import android.view.View;
 import android.widget.ImageButton;
+import android.widget.Toast;
 
 import com.squareup.picasso.Callback;
 import com.squareup.picasso.Picasso;
 
 import java.io.File;
 import java.io.IOException;
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Date;
+import java.util.List;
 
 public class MainActivity extends AppCompatActivity implements View.OnClickListener {
 
     private static final String TAG = "MAIN_ACTIVITY";
-    private ImageButton mImageButton1;
-    private String mCurrentImagePath;
+    private ImageButton mImageButton1, mImageButton2, mImageButton3, mImageButton4;
+    private String mCurrentImagePath = "";
 
+    private List<ImageButton> mImageButtons;
+    private ArrayList<String> mImageFilePaths;
+
+    private final static String BUNDLE_KEY_IMAGE_FILE_PATHS = "bundle key image file paths";
     private final static String BUNDLE_KEY_MOST_RECENT_FILE_PATH = "bundle key most recent file path";
 
     @Override
@@ -33,7 +45,15 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
         setContentView(R.layout.activity_main);
 
         mImageButton1 = findViewById(R.id.imageButton1);
-        mImageButton1.setOnClickListener(this);
+        mImageButton2 = findViewById(R.id.imageButton2);
+        mImageButton3 = findViewById(R.id.imageButton3);
+        mImageButton4 = findViewById(R.id.imageButton4);
+
+        mImageButtons = new ArrayList<>(Arrays.asList(mImageButton1, mImageButton2, mImageButton3, mImageButton4));
+
+        for (ImageButton button: mImageButtons) {
+            button.setOnClickListener(this);
+        }
 
         if (savedInstanceState != null) {
             mCurrentImagePath = savedInstanceState.getString(BUNDLE_KEY_MOST_RECENT_FILE_PATH);
@@ -42,18 +62,24 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
         if (mCurrentImagePath == null) {
             mCurrentImagePath = "";
         }
+
+        if (mImageFilePaths == null) {
+            mImageFilePaths = new ArrayList<>(Arrays.asList( "", "", "", ""));
+        }
     }
 
     @Override
     public void onSaveInstanceState(Bundle outBundle) {
         super.onSaveInstanceState(outBundle);
         outBundle.putString(BUNDLE_KEY_MOST_RECENT_FILE_PATH, mCurrentImagePath);
+        outBundle.putStringArrayList(BUNDLE_KEY_IMAGE_FILE_PATHS, mImageFilePaths);
     }
 
     @Override
     public void onClick(View view) {
         // Completed - handle ImageButton click
-        int requestCodeButtonIndex = 0; // todo revise this for many ImageButtons
+        int requestCodeButtonIndex = mImageButtons.indexOf(view); // Completed - revise this for many ImageButtons
+
         Intent takePictureIntent = new Intent(MediaStore.ACTION_IMAGE_CAPTURE);
 
         if (takePictureIntent.resolveActivity(getPackageManager()) != null) { // If there's a camera
@@ -93,6 +119,8 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
         if (resultCode == RESULT_OK) {
             Log.d(TAG, "onActivityResult for request code " + requestCode +
                     " and current path " + mCurrentImagePath);
+            mImageFilePaths.set(requestCode, mCurrentImagePath);
+            requestSaveImageToMediaStore();
         }
 
         else if (resultCode == RESULT_CANCELED) {
@@ -110,30 +138,60 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
 
         Log.d(TAG, "focus changed " + hasFocus);
         if (hasFocus) {
-            loadImage();
+            for (int index = 0; index < mImageButtons.size() ; index++) {
+                loadImage(index);
+            }
         }
     }
 
-    private void loadImage() {
-        // Completed - complete this
-        if (mCurrentImagePath != null && !mCurrentImagePath.isEmpty()) {
+    private void loadImage(int index) {
+
+        ImageButton imageButton = mImageButtons.get(index);
+        String path = mImageFilePaths.get(index);
+
+        if (path != null && !path.isEmpty()) {
             Picasso.get()
-                    .load(new File(mCurrentImagePath))
-                    .error(android.R.drawable.stat_notify_error) // built-in error icon
+                    .load(new File(path))
+                    .error(android.R.drawable.stat_notify_error)
                     .fit()
                     .centerCrop()
-                    .into(mImageButton1, new Callback() {
+                    .into(imageButton, new Callback() {
                         @Override
                         public void onSuccess() {
-                            Log.d(TAG, "Success");
+                            Log.d(TAG, "Image Loaded");
                         }
-
                         @Override
                         public void onError(Exception e) {
-                            Log.d(TAG, "Error", e);
+                            Log.d(TAG, "Error Loading Image", e);
                         }
-                        //@Override
                     });
+
+            }
+    }
+
+    private void requestSaveImageToMediaStore() {
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.WRITE_EXTERNAL_STORAGE) ==
+                PackageManager.PERMISSION_GRANTED) {
+            saveImage();
+        } else {
+            ActivityCompat.requestPermissions(this, new String[]{Manifest.permission.WRITE_EXTERNAL_STORAGE}, 100);
+        }
+    }
+
+    @Override
+    public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
+        if (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+            saveImage();
+        } else {
+            Toast.makeText(this, "Images will NOT be saved to media store", Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    private void saveImage() {
+        try {
+            MediaStore.Images.Media.insertImage(getContentResolver(), mCurrentImagePath, "Collage", "Collage");
+        } catch (IOException e) {
+            Log.e(TAG, "Image file not found", e);
         }
     }
 }
